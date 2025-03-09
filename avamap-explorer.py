@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import folium
+from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
+import time
 
 # Initialize session state for the visited set
 if 'visited' not in st.session_state:
@@ -20,18 +22,24 @@ action = st.sidebar.selectbox(
         "Add a Location",
         "Check Visited Locations",
         "View Map",
-        "Clear Visited Locations"
+        "Clear Visited Locations",
+        "Manage Locations"
     ]
 )
 
 # Function to get coordinates for a location
+@st.cache_data
 def get_location_coordinates(location):
     geolocator = Nominatim(user_agent="geoexplorer")
     try:
-        loc = geolocator.geocode(location)
-        return (loc.latitude, loc.longitude)
-    except AttributeError:
+        loc = geolocator.geocode(location, timeout=10)
+        if loc:
+            return (loc.latitude, loc.longitude)
         return None
+    except Exception as e:
+        st.warning(f" Error geocoding  '{location}' : {str(e)}")
+        return None
+    
 
 # Perform actions based on user selection
 if action == "Add a Location":
@@ -47,6 +55,27 @@ if action == "Add a Location":
                 st.warning(f"Could not find '{location}'. Please check the spelling or try another location.")
         else:
             st.warning("Please enter a valid location.")
+elif action == "Manage Locations":
+    st.subheader("Manage Your Visited Locations")
+    
+    if not st.session_state.visited:
+        st.info("Your visited list is empty. Add some locations first!")
+    else:
+        # Create a list of locations for the selectbox
+        locations_list = list(st.session_state.visited)
+        
+        # Let user select a location to delete
+        location_to_delete = st.selectbox(
+            "Select a location to delete:",
+            options=locations_list
+        )
+        
+        # Button to confirm deletion
+        if st.button("Delete Selected Location"):
+            st.session_state.visited.remove(location_to_delete)
+            st.success(f"'{location_to_delete}' has been removed from your visited list!")
+            # Rerun to update the UI immediately
+            st.rerun()
 
 elif action == "Check Visited Locations":
     st.subheader("Check Your Visited Locations")
@@ -67,14 +96,15 @@ elif action == "View Map":
         first_location = next(iter(st.session_state.visited))
         first_coords = get_location_coordinates(first_location)
         if first_coords:
-            m = folium.Map(location=first_coords, zoom_start=2)
+            m = folium.Map(location=first_coords, zoom_start=2,
+                           zoom_control=True)
 
             # Add markers for all visited locations
             for loc in st.session_state.visited:
                 coords = get_location_coordinates(loc)
                 if coords:
                     folium.Marker(coords, popup=loc).add_to(m)
-
+                time.sleep(10)
             # Display the map
             st_data = st_folium(m, width=700)
         else:
